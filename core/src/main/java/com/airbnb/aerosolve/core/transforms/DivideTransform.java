@@ -1,22 +1,25 @@
 package com.airbnb.aerosolve.core.transforms;
 
 import com.airbnb.aerosolve.core.FeatureVector;
+import com.airbnb.aerosolve.core.util.Util;
+
 import com.typesafe.config.Config;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 /**
  * output = field1.keys / (field2.key2 + constant)
  */
-public class DivideTransform extends Transform {
+public class DivideTransform implements Transform {
   private String fieldName1;
   private String fieldName2;
   private List<String> keys;
   private String key2;
-    private String outputName;
+  private String outputName;
   private Double constant;
 
   @Override
@@ -52,15 +55,15 @@ public class DivideTransform extends Transform {
     }
 
     Double scale = 1.0 / (constant + div);
-
-    Map<String, Double> output = new HashMap<>();
+    Map<String, Double> output = Util.getOrCreateFloatFeature(outputName, floatFeatures);
 
     for (String key : keys) {
-      Double val = feature1.get(key);
-      if (val != null) {
-        output.put(key, val * scale);
+      if (feature1.containsKey(key)) {
+        Double val = feature1.get(key);
+        if (val != null) {
+          output.put(key + "-d-" + key2, val * scale);
+        }
       }
     }
-    floatFeatures.put(outputName, output);
   }
 }

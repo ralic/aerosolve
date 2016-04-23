@@ -1,6 +1,8 @@
 package com.airbnb.aerosolve.core.transforms;
 
 import com.airbnb.aerosolve.core.FeatureVector;
+import com.airbnb.aerosolve.core.util.Util;
+
 import com.typesafe.config.Config;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +14,7 @@ import java.util.HashMap;
  * i.e. prod_i 1 + x_i
  * and places the result in outputName
  */
-public class ProductTransform extends Transform {
+public class ProductTransform implements Transform {
   private String fieldName1;
   private List<String> keys;
   private String outputName;
@@ -37,7 +39,7 @@ public class ProductTransform extends Transform {
     }
 
     Double prod = 1.0;
-    Map<String, Double> output = new HashMap<>();
+    Map<String, Double> output = Util.getOrCreateFloatFeature(outputName, floatFeatures);
     for (String key : keys) {
       Double dbl = feature1.get(key);
       if (dbl != null) {
@@ -45,6 +47,5 @@ public class ProductTransform extends Transform {
       }
     }
     output.put("*", prod);
-    floatFeatures.put(outputName, output);
   }
 }

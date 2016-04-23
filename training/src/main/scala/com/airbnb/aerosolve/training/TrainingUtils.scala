@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 import com.airbnb.aerosolve.core.Example
 import com.airbnb.aerosolve.core.FeatureVector
 import com.airbnb.aerosolve.core.util.Util
+import com.airbnb.aerosolve.core.util.StringDictionary
 import com.airbnb.aerosolve.core.models.AbstractModel
 import com.airbnb.aerosolve.core.models.ModelFactory
 import com.airbnb.aerosolve.core.transforms.Transformer
@@ -21,7 +22,7 @@ import org.apache.spark.rdd.RDD
 import org.slf4j.{LoggerFactory, Logger}
 
 import scala.collection.JavaConverters._
-
+import scala.collection.JavaConversions._
 import com.typesafe.config.Config
 
 import scala.collection.mutable.ArrayBuffer
@@ -62,9 +63,17 @@ object TrainingUtils {
 
   def saveModel(model : AbstractModel,
                 config : Config,
-                key : String) = {
+                key : String): Unit = {
     try {
       val output = config.getString(key)
+      saveModel(model, output)
+    } catch {
+      case _ : Throwable => log.error("Could not save model")
+    }
+  }
+
+  def saveModel(model: AbstractModel, output: String): Unit = {
+    try {
       val fileSystem = FileSystem.get(new java.net.URI(output),
                                       new Configuration())
       val file = fileSystem.create(new Path(output), true)
@@ -169,68 +178,18 @@ object TrainingUtils {
       case "spline" => SplineTrainer.trainAndSaveToFile(sc, input, config, key)
       case "boosted_stumps" => BoostedStumpsTrainer.trainAndSaveToFile(sc, input, config, key)
       case "decision_tree" => DecisionTreeTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "forest" => ForestTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "boosted_forest" => BoostedForestTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "additive" => AdditiveModelTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "kernel" => KernelTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "full_rank_linear" => FullRankLinearTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "low_rank_linear" => LowRankLinearTrainer.trainAndSaveToFile(sc, input, config, key)
+      case "mlp" => MlpModelTrainer.trainAndSaveToFile(sc, input, config, key)
     }
-  }
-
-  // Returns distribution of features. Min, 1%tile, 99%tile, max
-  def getFeatureDistribution(minCount : Int,
-                             input : RDD[Example]) :
-  Array[((String, String), (Double, Double, Double, Double))] = {
-    case class Sample(min : Double, max : Double, count : Int, values : ArrayBuffer[Double])
-
-    def updateSample(value : Double, sample : Sample) : Sample = {
-      // Reservoir sample
-      val buffer = sample.values
-      if (buffer.size < 100) {
-        buffer.append(value)
-      } else {
-        val rnd = scala.util.Random.nextInt(sample.count + 1)
-        if (rnd < 100) {
-          buffer(rnd) = value
-        }
-      }
-      Sample(scala.math.min(value, sample.min),
-             scala.math.max(value, sample.max),
-             sample.count + 1,
-             buffer)
-    }
-
-    input
-      .mapPartitions(partition => {
-      // family, feature name => min, max, count, sample
-      val weights = new ConcurrentHashMap[(String, String), Sample]().asScala
-      partition.foreach(example => {
-        // Map(Feature family -> Map( feature name -> value ) )
-        val flatFeature = Util.flattenFeature(example.example.get(0)).asScala
-        flatFeature.foreach(familyMap => {
-          familyMap._2.asScala.foreach(feature => {
-            val key = (familyMap._1, feature._1)
-            val curr = weights.getOrElse(key,
-                                         Sample(Double.MaxValue, -Double.MaxValue, 0, ArrayBuffer[Double]()))
-            val next = updateSample(feature._2, curr)
-            weights.put(key, next)
-          })
-        })
-      })
-      weights.iterator
-    })
-      .reduceByKey((a, b) =>
-                     Sample(scala.math.min(a.min, b.min),
-                      scala.math.max(a.max, b.max),
-                      a.count + b.count,
-                      a.values ++ b.values))
-      .filter(x => x._2.count >= minCount)
-      .map(x => {
-      val buffer = x._2.values.sortWith((a, b) => a < b)
-      val one_percentile : Int = scala.math.min((buffer.size * 0.01).toInt, buffer.size - 1)
-      val ninety_nine_percentile : Int = scala.math.min((buffer.size * 0.99).toInt, buffer.size - 1)
-      (x._1, (x._2.min, buffer(one_percentile), buffer(ninety_nine_percentile), x._2.max))
-    })
-      .collect
-      .toArray
   }
   
   def getLabel(fv : FeatureVector, rankKey : String, threshold : Double) : Double = {
+    // get label for classification
     val rank = fv.floatFeatures.get(rankKey).asScala.head._2
     val label = if (rank <= threshold) {
       -1.0
@@ -239,4 +198,118 @@ object TrainingUtils {
     }
     return label
   }
+
+  def getLabelDistribution(fv : FeatureVector, rankKey : String) : Map[String, Double] = {
+    fv.floatFeatures.get(rankKey).asScala.map(x => (x._1.toString, x._2.toDouble)).toMap
+  }
+
+  def getLabel(fv : FeatureVector, rankKey : String) : Double = {
+    // get label for regression
+    fv.floatFeatures.get(rankKey).asScala.head._2.toDouble
+  }
+
+  // Returns the statistics of a feature
+  case class FeatureStatistics(count : Double,min : Double, max : Double, mean : Double, variance : Double)
+
+  def getFeatureStatistics(
+                minCount : Int,
+                input : RDD[Example]) : Array[((String, String), FeatureStatistics)] = {
+    // ignore features present in less than minCount examples
+    // output: Array[((featureFamily, featureName), (minValue, maxValue))]
+    input
+      .mapPartitions(partition => {
+      // family, feature name => count, min, max, sum x, sum x ^ 2
+      val weights = new ConcurrentHashMap[(String, String), FeatureStatistics]().asScala
+      partition.foreach(examples => {
+        for (i <- 0 until examples.example.size()) {
+          val flatFeature = Util.flattenFeature(examples.example.get(i)).asScala
+          flatFeature.foreach(familyMap => {
+            familyMap._2.foreach(feature => {
+              val key = (familyMap._1, feature._1)
+              val curr = weights.getOrElse(key, FeatureStatistics(0, Double.MaxValue, -Double.MaxValue, 0.0, 0.0))
+                val v = feature._2
+                weights.put(key,
+                            FeatureStatistics(curr.count + 1,
+                             scala.math.min(curr.min, v),
+                             scala.math.max(curr.max, v),
+                             curr.mean + v, // actually the sum
+                             curr.variance + v * v) // actually the sum of squares
+                )
+              })
+          })
+        }
+      })
+      weights.iterator
+    })
+      .reduceByKey((a, b) =>
+                     FeatureStatistics(a.count + b.count,
+                      scala.math.min(a.min, b.min),
+                      scala.math.max(a.max, b.max),
+                      a.mean + b.mean,
+                      a.variance + b.variance))
+      .filter(x => x._2.count >= minCount)
+      .map(x => (x._1,
+          FeatureStatistics(
+           count = x._2.count,
+           min = x._2.min,
+           max = x._2.max,
+           mean = x._2.mean / x._2.count,
+           variance = (x._2.variance - x._2.mean * x._2.mean / x._2.count) / (x._2.count - 1.0)
+           )))
+      .collect
+  }
+
+  def getLabelCounts(minCount : Int,
+                     input : RDD[Example],
+                     rankKey: String) : Array[((String, String), Int)] = {
+    input
+      .mapPartitions(partition => {
+        // family, feature name => count
+        val weights = new ConcurrentHashMap[(String, String), Int]().asScala
+        partition.foreach(examples => {
+          for (i <- 0 until examples.example.size()) {
+            val example = examples.example.get(i)
+            val floatFeatures = example.getFloatFeatures
+            val stringFeatures = example.getStringFeatures
+            if (floatFeatures.containsKey(rankKey)) {
+              for (labelEntry <- floatFeatures.get(rankKey)) {
+                val key = (rankKey, labelEntry._1)
+                val cur = weights.getOrElse(key, 0)
+                weights.put(key, 1 + cur)
+              }
+            } else if (stringFeatures.containsKey(rankKey)) {
+              for (labelName <- stringFeatures.get(rankKey)) {
+                val key = (rankKey, labelName)
+                val cur = weights.getOrElse(key, 0)
+                weights.put(key, 1 + cur)
+              }
+            }
+          }
+        }
+        )
+        weights.iterator
+      })
+      .reduceByKey((a, b) => a + b)
+      .collect
+  }
+
+  def createStringDictionaryFromFeatureStatistics(stats : Array[((String, String), FeatureStatistics)],
+                                                  excludedFamilies : Set[String]) : StringDictionary = {
+    val dictionary = new StringDictionary()
+    for (stat <- stats) {
+      val (family, feature) = stat._1
+      if (!excludedFamilies.contains(family)) {
+        if (stat._2.variance < 1e-6) {
+          // Categorical feature, just pass through
+          dictionary.possiblyAdd(family, feature, 0.0f, 1.0f)
+        } else {
+          val mean = stat._2.mean
+          val scale = Math.sqrt(1.0 / stat._2.variance)
+          dictionary.possiblyAdd(family, feature, mean, scale)
+        }
+      }
+    }
+    dictionary
+  }
+
 }

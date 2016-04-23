@@ -1,24 +1,19 @@
 package com.airbnb.aerosolve.core.models;
 
+import com.airbnb.aerosolve.core.DebugScoreRecord;
+import com.airbnb.aerosolve.core.FeatureVector;
+import com.airbnb.aerosolve.core.ModelHeader;
+import com.airbnb.aerosolve.core.ModelRecord;
+import com.airbnb.aerosolve.core.function.Spline;
+import com.airbnb.aerosolve.core.util.Util;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.Map;
-import java.util.List;
-import java.util.HashMap;
-import java.util.ArrayList;
-import java.util.PriorityQueue;
-import java.util.AbstractMap;
-
-import com.airbnb.aerosolve.core.FeatureVector;
-import com.airbnb.aerosolve.core.ModelHeader;
-import com.airbnb.aerosolve.core.ModelRecord;
-import com.airbnb.aerosolve.core.DebugScoreRecord;
-import com.airbnb.aerosolve.core.util.Util;
-import com.airbnb.aerosolve.core.util.Spline;
-import lombok.Getter;
-import lombok.Setter;
+import java.util.*;
 
 // A linear piecewise spline based model with a spline per feature.
 // See http://en.wikipedia.org/wiki/Generalized_additive_model
@@ -40,15 +35,15 @@ public class SplineModel extends AbstractModel {
 
     public WeightSpline() {
     }
+
     public WeightSpline(float minVal, float maxVal, int numBins) {
       splineWeights = new float[numBins];
       spline = new Spline(minVal, maxVal, splineWeights);
     }
     
     public void resample(int newBins) {
-      Spline newSpline = new Spline(spline, newBins);
-      spline = newSpline;
-      splineWeights = newSpline.getWeights(); 
+      spline.resample(newBins);
+      splineWeights = spline.getWeights();
     }
     public Spline spline;
     public float[] splineWeights;
@@ -177,6 +172,11 @@ public class SplineModel extends AbstractModel {
       }
     }
   }
+  
+  @Override
+  public void onlineUpdate(float grad, float learningRate, Map<String, Map<String, Double>> flatFeatures) {
+    update(grad, learningRate, flatFeatures);
+  }
 
   // Adds a new spline
   public void addSpline(String family, String feature, float minVal, float maxVal, Boolean overwrite) {
@@ -200,7 +200,7 @@ public class SplineModel extends AbstractModel {
                                   float grad,
                                   float learningRate,
                                   WeightSpline ws) {
-    ws.spline.update(val, -grad * learningRate);
+    ws.spline.update(-grad * learningRate, val);
     ws.LInfinityCap(splineNormCap);
   }
 
@@ -222,6 +222,7 @@ public class SplineModel extends AbstractModel {
     return sum;
   }
 
+  @Override
   public void save(BufferedWriter writer) throws IOException {
     ModelHeader header = new ModelHeader();
     header.setModelType("spline");

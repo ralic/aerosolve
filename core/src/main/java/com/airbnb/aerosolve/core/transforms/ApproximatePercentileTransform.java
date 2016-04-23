@@ -1,20 +1,17 @@
 package com.airbnb.aerosolve.core.transforms;
 
 import com.airbnb.aerosolve.core.FeatureVector;
+import com.airbnb.aerosolve.core.util.Util;
 import com.typesafe.config.Config;
 
-import java.util.HashMap;
-import java.util.Set;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Map.Entry;
 
 /**
  * Given a fieldName1, low, upper key
  * Remaps fieldName2's key2 value such that low = 0, upper = 1.0 thus approximating
  * the percentile using linear interpolation.
  */
-public class ApproximatePercentileTransform extends Transform {
+public class ApproximatePercentileTransform implements Transform {
   private String fieldName1;
   private String fieldName2;
   private String lowKey;
@@ -72,12 +69,7 @@ public class ApproximatePercentileTransform extends Transform {
       return;
     }
 
-    Map<String, Double> output = floatFeatures.get(outputName);
-
-    if (output == null) {
-      output = new HashMap<>();
-      floatFeatures.put(outputName, output);
-    }
+    Map<String, Double> output = Util.getOrCreateFloatFeature(outputName, floatFeatures);
 
     Double outVal = 0.0;
     if (val <= low) {

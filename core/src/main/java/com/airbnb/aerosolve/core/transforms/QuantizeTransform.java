@@ -13,7 +13,7 @@ import java.util.Map.Entry;
  * Multiplies the floatFeature named in "field1" with "scale" before placing
  * it in the stringFeature named "output"
  */
-public class QuantizeTransform extends Transform {
+public class QuantizeTransform implements Transform {
   private String fieldName1;
   private double scale;
   private String outputName;
@@ -37,10 +37,10 @@ public class QuantizeTransform extends Transform {
       return;
     }
 
-    Set<String> output = new HashSet<>();
     Util.optionallyCreateStringFeatures(featureVector);
     Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
-    stringFeatures.put(outputName, output);
+
+    Set<String> output = Util.getOrCreateStringFeature(outputName, stringFeatures);
 
     for (Entry<String, Double> feature : feature1.entrySet()) {
       transformAndAddFeature(scale,

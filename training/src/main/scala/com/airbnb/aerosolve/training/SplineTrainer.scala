@@ -42,7 +42,8 @@ object SplineTrainer {
        isRanking : Boolean,    // If we have a list based ranking loss
        rankFraction : Double,  // Fraction of time to use ranking loss when loss is rank_and_hinge
        rankMargin : Double,    // The margin for ranking loss
-       maxSamplesPerExample : Int // Max number of samples to use per example
+       maxSamplesPerExample : Int, // Max number of samples to use per example
+       epsilon : Double        // epsilon used in epsilon-insensitive loss for regression training
    )
 
   def train(sc : SparkContext,
@@ -54,6 +55,7 @@ object SplineTrainer {
       case "rank_and_hinge" => true
       case "logistic" => false
       case "hinge" => false
+      case "regression" => false
       case _ => {
         log.error("Unknown loss function %s".format(loss))
         System.exit(-1)
@@ -73,6 +75,7 @@ object SplineTrainer {
     val linfinityThreshold : Double = config.getDouble(key + ".linfinity_threshold")
     val initModelPath : String = Try{config.getString(key + ".init_model")}.getOrElse("")
     val threshold : Double = config.getDouble(key + ".rank_threshold")
+    val epsilon: Double = Try{config.getDouble(key + ".epsilon")}.getOrElse(0.0)
 
     val lossMod : Int = try {
       config.getInt(key + ".loss_mod")
@@ -106,7 +109,8 @@ object SplineTrainer {
        isRanking = isRanking,
        rankFraction = rankFraction,
        rankMargin = rankMargin,
-       maxSamplesPerExample = maxSamplesPerExample)
+       maxSamplesPerExample = maxSamplesPerExample,
+       epsilon = epsilon)
 
     val transformed : RDD[Example] = if (isRanking) {
       LinearRankerUtils.transformExamples(input, config, key)
@@ -133,8 +137,6 @@ object SplineTrainer {
       setPrior(config, key, newModel)
       newModel
     }
-
-    log.info("Computing min/max values for all features")
 
     log.info("Training using " + loss)
     for (i <- 1 to iterations) {
@@ -167,10 +169,13 @@ object SplineTrainer {
                 input : RDD[Example],
                 model : SplineModel,
                 overwrite : Boolean) = {
-    val minMax = getMinMax(minCount, rankKey, input.sample(false, subsample))
-    log.info("Num features = %d".format(minMax.length))
-    for (entry <- minMax) {
-      model.addSpline(entry._1._1, entry._1._2, entry._2._1.toFloat, entry._2._2.toFloat, overwrite)
+    log.info("Computing min/max values for all features")
+    val stats = TrainingUtils
+      .getFeatureStatistics(minCount, input.sample(false, subsample))
+      .filter(x => x._1._1 != rankKey)
+    log.info("Num features = %d".format(stats.length))
+    for (entry <- stats) {
+      model.addSpline(entry._1._1, entry._1._2, entry._2.min.toFloat, entry._2.max.toFloat, overwrite)
     }
   }
 
@@ -205,45 +210,6 @@ object SplineTrainer {
     } catch {
       case _ : Throwable => log.info("No prior given")
     }
-  }
-
-  // Returns the min/max of a feature
-  def getMinMax(minCount : Int,
-                rankKey : String,
-                input : RDD[Example]) : Array[((String, String), (Double, Double))] = {
-    input
-      .mapPartitions(partition => {
-      // family, feature name => min, max, count
-      val weights = new ConcurrentHashMap[(String, String), (Double, Double, Int)]().asScala
-      partition.foreach(examples => {
-        for (i <- 0 until examples.example.size()) {
-          val flatFeature = Util.flattenFeature(examples.example.get(i)).asScala
-          flatFeature.foreach(familyMap => {
-            if (!rankKey.equals(familyMap._1)) {
-              familyMap._2.foreach(feature => {
-                val key = (familyMap._1, feature._1)
-                val curr = weights.getOrElse(key,
-                                             (Double.MaxValue, -Double.MaxValue, 0))
-                weights.put(key,
-                            (scala.math.min(curr._1, feature._2),
-                             scala.math.max(curr._2, feature._2),
-                             curr._3 + 1)
-                )
-              })
-            }
-          })
-        }
-      })
-      weights.iterator
-    })
-    .reduceByKey((a, b) =>
-                   (scala.math.min(a._1, b._1),
-                    scala.math.max(a._2, b._2),
-                    a._3 + b._3))
-    .filter(x => x._2._3 >= minCount)
-    .map(x => (x._1, (x._2._1, x._2._2)))
-    .collect
-    .toArray
   }
 
   def evaluatePolynomial(coeff : Array[Double],
@@ -562,10 +528,16 @@ object SplineTrainer {
                     workingModel : SplineModel,
                     loss : String,
                     params : SplineTrainerParams) : Double = {
-    val label = TrainingUtils.getLabel(fv, params.rankKey, params.threshold)
+    val label: Double = if (loss == "regression") {
+      TrainingUtils.getLabel(fv, params.rankKey)
+    } else {
+      TrainingUtils.getLabel(fv, params.rankKey, params.threshold)
+    }
+
     loss match {
       case "logistic" => updateLogistic(workingModel, fv, label, params)
       case "hinge" => updateHinge(workingModel, fv, label, params)
+      case "regression" => updateRegressor(workingModel, fv, label, params)
     }
   }
 
@@ -601,6 +573,21 @@ object SplineTrainer {
       model.update(grad.toFloat,
                    params.learningRate.toFloat,
                    flatFeatures)
+    }
+    return loss
+  }
+
+  def updateRegressor(model: SplineModel,
+                      fv: FeatureVector,
+                      label: Double,
+                      params : SplineTrainerParams) : Double = {
+    val flatFeatures = Util.flattenFeatureWithDropout(fv, params.dropout)
+    val prediction = model.scoreFlatFeatures(flatFeatures) / (1.0 - params.dropout)
+    val loss = math.abs(prediction - label) // absolute difference
+    if (prediction - label > params.epsilon) {
+      model.update(1.0f, params.learningRate.toFloat, flatFeatures)
+    } else if (prediction - label < -params.epsilon) {
+      model.update(-1.0f, params.learningRate.toFloat, flatFeatures)
     }
     return loss
   }

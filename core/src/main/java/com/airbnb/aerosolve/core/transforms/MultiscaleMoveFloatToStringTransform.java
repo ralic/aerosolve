@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Moves named fields from one family to another.
  */
-public class MultiscaleMoveFloatToStringTransform extends Transform {
+public class MultiscaleMoveFloatToStringTransform implements Transform {
   private String fieldName1;
   private List<Double> buckets;
   private String outputName;
@@ -46,12 +46,7 @@ public class MultiscaleMoveFloatToStringTransform extends Transform {
 
     Util.optionallyCreateStringFeatures(featureVector);
     Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
-    Set<String> output = new HashSet<>();
-    if (stringFeatures.containsKey(outputName)) {
-      output = stringFeatures.get(outputName);
-    } else {
-      stringFeatures.put(outputName, output);
-    }
+    Set<String> output = Util.getOrCreateStringFeature(outputName, stringFeatures);
 
     for (String key : keys) {
       if (feature1.containsKey(key)) {

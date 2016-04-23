@@ -12,7 +12,7 @@ import java.util.Map.Entry;
  * Quantizes the floatFeature named in "field1" with buckets in "bucket" before placing
  * it in the stringFeature named "output"
  */
-public class MultiscaleQuantizeTransform extends Transform {
+public class MultiscaleQuantizeTransform implements Transform {
   private String fieldName1;
   private List<Double> buckets;
   private String outputName;
@@ -35,10 +35,9 @@ public class MultiscaleQuantizeTransform extends Transform {
       return;
     }
 
-    Set<String> output = new HashSet<>();
     Util.optionallyCreateStringFeatures(featureVector);
     Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
-    stringFeatures.put(outputName, output);
+    Set<String> output = Util.getOrCreateStringFeature(outputName, stringFeatures);
 
     for (Entry<String, Double> feature : feature1.entrySet()) {
       transformAndAddFeature(buckets,

@@ -1,7 +1,12 @@
+
 aerosolve
 =========
 
 Machine learning **for humans**.
+
+[![Build Status](https://travis-ci.org/airbnb/aerosolve.svg)](https://travis-ci.org/airbnb/aerosolve)
+[ ![Download](https://api.bintray.com/packages/airbnb/aerosolve/aerosolve-core/images/download.svg) ](https://bintray.com/airbnb/aerosolve/aerosolve-core/_latestVersion)
+[ ![Download](https://api.bintray.com/packages/airbnb/aerosolve/aerosolve-training/images/download.svg) ](https://bintray.com/airbnb/aerosolve/aerosolve-training/_latestVersion)
 
 What is it?
 -----------
@@ -115,8 +120,20 @@ This allows us to debug the spline model for features that are buggy or unexpect
    * Decision tree model - in memory only. Mostly used to generate transforms for the linear or spline model.
    * Maxout neural network model. Experimental and mostly used as a comparison baseline.
 
+IDE
+------
+If you use intellij, try build first, so that thrift classes is available and to fix the spark compiling error inside intellij, type `command+;` and click dependency and change related files from test to compile, such as org.apache.spark and org.apache.hadoop:hadoop-common.
+We keep gradle config as testCompile so that to reduce jar file size.
+
 Support
 -------
 
-Dev group :  https://groups.google.com/forum/#!forum/aerosolve-dev
-User group : https://groups.google.com/forum/#!forum/aerosolve-users
+[Hackpad](https://aerosolve.hackpad.com/Welcome-to-Aerosolve-xZEVtJC9D8a)
+
+[Dev group](https://groups.google.com/forum/#!forum/aerosolve-dev)
+
+[User group](https://groups.google.com/forum/#!forum/aerosolve-users)
+
+In the wild
+-------
+Organizations and projects using `aerosolve` can list themselves [here](inthewild.md).

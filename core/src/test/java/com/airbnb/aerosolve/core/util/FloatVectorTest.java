@@ -27,6 +27,12 @@ public class FloatVectorTest {
     assertEquals(1.0f * 3.0f + 2.0f * 4.0f, v1.dot(v2), 0.1f);
   }
 
+  @Test public void testL2Distance2() {
+    FloatVector v1 = new FloatVector(new float[]{1.0f, 2.0f});
+    FloatVector v2 = new FloatVector(new float[]{3.0f, 5.0f});
+    assertEquals(4.0f + 9.0f, v1.l2Distance2(v2), 0.1f);
+  }
+
   @Test
   public void testMultiplyAdd() {
     FloatVector v1 = new FloatVector(new float[]{1.0f, 2.0f});
@@ -42,6 +48,16 @@ public class FloatVectorTest {
     v1.rectify();
     assertEquals(1.0f, v1.values[0], 0.1f);
     assertEquals(0.0f, v1.values[1], 0.1f);
+  }
+
+  @Test
+  public void testSoftmax() {
+    FloatVector v1 = new FloatVector(new float[]{1.0f, -2.0f});
+    v1.softmax();
+    float a = (float) Math.exp(1.0f);
+    float b = (float) Math.exp(-2.0f);
+    assertEquals(a / (a + b), v1.values[0], 0.01f);
+    assertEquals(b / (a + b), v1.values[1], 0.01f);
   }
 
   @Test

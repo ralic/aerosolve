@@ -29,6 +29,14 @@ public class FloatVector implements Serializable {
     values = val;
   }
 
+  public void set(int i, float val) {
+    values[i] = val;
+  }
+
+  public float get(int i) {
+    return values[i];
+  }
+
   public static FloatVector getGaussianVector(int num) {
     float[] init = new float[num];
     double mult = 1.0 / Math.sqrt(num);
@@ -38,8 +46,32 @@ public class FloatVector implements Serializable {
     return new FloatVector(init);
   }
 
+  public static FloatVector getGaussianVector(int num, float std) {
+    float[] init = new float[num];
+    for (int i = 0; i < num; i++) {
+      init[i] = (float) (rnd.nextGaussian() * std);
+    }
+    return new FloatVector(init);
+  }
+
+  public static FloatVector getUniformVector(int num) {
+    // uniformly sample from -1/sqrt(num) to +1/sqrt(num)
+    float[] init = new float[num];
+    double mult = 1.0 / Math.sqrt(num);
+    for (int i = 0; i < num; i++) {
+      init[i] = (float) (rnd.nextFloat() * mult * 2 - mult);
+    }
+    return new FloatVector(init);
+  }
+
   public void setZero(int num) {
     values = new float[num];
+  }
+
+  public void setConstant(float c) {
+    for (int i = 0; i < values.length; i++) {
+      values[i] = c;
+    }
   }
 
   public void setRandom(int num, float scale) {
@@ -54,6 +86,56 @@ public class FloatVector implements Serializable {
     float sum = 0;
     for (int i  = 0; i < values.length; i++) {
       sum += values[i] * other.values[i];
+    }
+    return sum;
+  }
+
+  public float l2Norm() {
+    float sum = 0;
+    for (int i  = 0; i < values.length; i++) {
+      sum += values[i] * values[i];
+    }
+    return (float) Math.sqrt(sum);
+  }
+
+  public void scale(float scale) {
+    for (int i  = 0; i < values.length; i++) {
+      values[i] *= scale;
+    }
+  }
+
+  public void capNorm(float maxNorm) {
+    float norm = this.l2Norm();
+    if (norm > maxNorm) {
+      this.scale(maxNorm / norm);
+    }
+  }
+
+  public void sigmoid() {
+    for (int i = 0; i < values.length; i++) {
+      // this is to prevent overflow
+      values[i] = Math.max(values[i], -20);
+      values[i] = 1.0f /(1.0f + (float) Math.exp(-values[i]));
+    }
+  }
+
+  public void tanh() {
+    for (int i = 0; i < values.length; i++) {
+      values[i] = (float) Math.tanh(values[i]);
+    }
+  }
+
+  public int length() {
+    return values.length;
+  }
+
+  // Squared euclidean distance
+  public float l2Distance2(FloatVector other) {
+    assert(values.length == other.values.length);
+    float sum = 0;
+    for (int i  = 0; i < values.length; i++) {
+      float diff = values[i] - other.values[i]; 
+      sum += diff * diff;
     }
     return sum;
   }
@@ -77,6 +159,24 @@ public class FloatVector implements Serializable {
       if (values[i] < 0) {
         values[i] = 0.0f;
       }
+    }
+  }
+
+  public void softmax() {
+    float maxVal = values[0];
+    for (int i = 1; i < values.length; i++) {
+      maxVal = Math.max(maxVal, values[i]);
+    }
+    float sum = 0.0f;
+    for (int i = 0; i < values.length; i++) {
+      values[i] = (float) Math.exp(values[i] - maxVal);
+      sum += values[i];
+    }
+    if (sum <= 1e-10f) {
+      sum = 1e-10f;
+    }
+    for (int i = 0; i < values.length; i++) {
+      values[i] /= sum;
     }
   }
 

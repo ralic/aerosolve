@@ -11,12 +11,13 @@ import com.google.common.hash.HashCode;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.thrift.TBase;
 import org.apache.thrift.TDeserializer;
 import org.apache.thrift.TSerializer;
-import org.apache.thrift.TBase;
 
-import java.io.Serializable;
+import java.io.*;
 import java.util.*;
+import java.util.zip.GZIPInputStream;
 
 public class Util implements Serializable {
   private static double LOG2 = Math.log(2);
@@ -33,15 +34,7 @@ public class Util implements Serializable {
     }
   }
   public static FeatureVector decodeFeatureVector(String str) {
-    FeatureVector tmp = new FeatureVector();
-    try {
-      byte[] bytes = Base64.decodeBase64(str.getBytes());
-      TDeserializer deserializer = new TDeserializer();
-      deserializer.deserialize(tmp, bytes);
-      return tmp;
-    } catch (Exception e) {
-      return tmp;
-    }
+    return decode(FeatureVector.class, str);
   }
 
   public static FeatureVector createNewFeatureVector() {
@@ -63,37 +56,61 @@ public class Util implements Serializable {
   }
 
   public static Example decodeExample(String str) {
-    Example tmp = new Example();
-    try {
-      byte[] bytes = Base64.decodeBase64(str.getBytes());
-      TDeserializer deserializer = new TDeserializer();
-      deserializer.deserialize(tmp, bytes);
-      return tmp;
-    } catch (Exception e) {
-      return tmp;
-    }
+    return decode(Example.class, str);
   }
+
   public static ModelRecord decodeModel(String str) {
-    ModelRecord tmp = new ModelRecord();
-    try {
-      byte[] bytes = Base64.decodeBase64(str.getBytes());
-      TDeserializer deserializer = new TDeserializer();
-      deserializer.deserialize(tmp, bytes);
-      return tmp;
-    } catch (Exception e) {
-      return tmp;
-    }
+    return decode(ModelRecord.class, str);
   }
-  public static KDTreeNode decodeKDTreeNode(String str) {
-    KDTreeNode tmp = new KDTreeNode();
+
+  public static <T extends TBase> T decode(T base, String str) {
     try {
       byte[] bytes = Base64.decodeBase64(str.getBytes());
       TDeserializer deserializer = new TDeserializer();
-      deserializer.deserialize(tmp, bytes);
-      return tmp;
+      deserializer.deserialize(base, bytes);
     } catch (Exception e) {
-      return tmp;
+      e.printStackTrace();
     }
+    return base;
+  }
+
+  public static <T extends TBase> T decode(Class<T> clazz, String str) {
+    try {
+      return decode(clazz.newInstance(), str);
+    } catch (InstantiationException e) {
+      e.printStackTrace();
+    } catch (IllegalAccessException e) {
+      e.printStackTrace();
+    }
+    return null;
+  }
+
+  public static KDTreeNode decodeKDTreeNode(String str) {
+    return decode(KDTreeNode.class, str);
+  }
+
+  public static <T extends TBase> List<T> readFromGzippedStream(Class<T> clazz, InputStream inputStream) {
+    try {
+      if (inputStream != null) {
+        GZIPInputStream gzipInputStream = new GZIPInputStream(inputStream);
+        BufferedReader reader = new BufferedReader(new InputStreamReader(gzipInputStream));
+        List<T> list = new ArrayList<>();
+        String line = reader.readLine();
+        while(line != null) {
+          T t = Util.decode(clazz, line);
+          if (t == null) {
+            assert (false);
+            return Collections.EMPTY_LIST;
+          }
+          list.add(t);
+          line = reader.readLine();
+        }
+        return list;
+      }
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+    return Collections.EMPTY_LIST;
   }
 
   public static void optionallyCreateStringFeatures(FeatureVector featureVector) {
@@ -108,6 +125,19 @@ public class Util implements Serializable {
       Map<String, Map<String, Double>> floatFeatures = new HashMap<>();
       featureVector.setFloatFeatures(floatFeatures);
     }
+  }
+
+  public static void setStringFeature(
+      FeatureVector featureVector,
+      String family,
+      String value) {
+    Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
+    if (stringFeatures == null) {
+      stringFeatures = new HashMap<>();
+      featureVector.setStringFeatures(stringFeatures);
+    }
+    Set<String> stringFamily = getOrCreateStringFeature(family, stringFeatures);
+    stringFamily.add(value);
   }
 
   public static Set<String> getOrCreateStringFeature(
@@ -131,6 +161,27 @@ public class Util implements Serializable {
     }
     return output;
   }
+
+  public static Map<String, List<Double>> getOrCreateDenseFeatures(FeatureVector featureVector) {
+    if (featureVector.getDenseFeatures() == null) {
+      Map<String, List<Double>> dense = new HashMap<>();
+      featureVector.setDenseFeatures(dense);
+    }
+    return featureVector.getDenseFeatures();
+  }
+
+  public static void setDenseFeature(
+      FeatureVector featureVector,
+      String name,
+      List<Double> value) {
+    Map<String, List<Double>> denseFeatures = featureVector.getDenseFeatures();
+    if (denseFeatures == null) {
+      denseFeatures = new HashMap<>();
+      featureVector.setDenseFeatures(denseFeatures);
+    }
+    denseFeatures.put(name, value);
+  }
+
 
   public static HashCode getHashCode(String family, String value) {
     Hasher hasher = Hashing.murmur3_128().newHasher();
@@ -277,6 +328,8 @@ public class Util implements Serializable {
     }
     return recordMap;
   }
+
+  
 
   public static List<DebugScoreDiffRecord> compareDebugRecords(List<DebugScoreRecord> record1,
                                                                List<DebugScoreRecord> record2){

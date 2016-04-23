@@ -1,6 +1,8 @@
 package com.airbnb.aerosolve.core.transforms;
 
 import com.airbnb.aerosolve.core.FeatureVector;
+import com.airbnb.aerosolve.core.util.Util;
+
 import com.typesafe.config.Config;
 
 import java.util.HashMap;
@@ -12,7 +14,7 @@ import java.util.Map.Entry;
 /**
  * Buckets float features and places them in a new float column.
  */
-public class BucketFloatTransform extends Transform {
+public class BucketFloatTransform implements Transform {
   private String fieldName1;
   private double bucket;
   private String outputName;
@@ -36,11 +38,7 @@ public class BucketFloatTransform extends Transform {
       return;
     }
 
-    Map<String, Double> output = floatFeatures.get(outputName);
-    if (output == null) {
-      output = new HashMap<>();
-      floatFeatures.put(outputName, output);
-    }
+    Map<String, Double> output = Util.getOrCreateFloatFeature(outputName, floatFeatures);
 
     for (Entry<String, Double> feature : feature1.entrySet()) {
       Double dbl = LinearLogQuantizeTransform.quantize(feature.getValue(), bucket);

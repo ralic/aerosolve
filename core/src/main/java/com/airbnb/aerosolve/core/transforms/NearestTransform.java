@@ -13,7 +13,7 @@ import java.util.Map.Entry;
 /**
  * output = nearest of (field1, field2.key)
  */
-public class NearestTransform extends Transform {
+public class NearestTransform implements Transform {
   private String fieldName1;
   private String fieldName2;
   private String key2;
@@ -48,8 +48,9 @@ public class NearestTransform extends Transform {
     if (sub == null) {
       return;
     }
-
-    Set<String> output = new HashSet<>();
+    
+    Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
+    Set<String> output = Util.getOrCreateStringFeature(outputName, stringFeatures);
     String nearest = "nothing";
     double bestDist = 1e10;
 
@@ -63,7 +64,5 @@ public class NearestTransform extends Transform {
     output.add(key2 + "~=" + nearest);
 
     Util.optionallyCreateStringFeatures(featureVector);
-    Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
-    stringFeatures.put(outputName, output);
   }
 }

@@ -3,21 +3,13 @@ package com.airbnb.aerosolve.core.models;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.Serializable;
 import java.lang.StringBuilder;
 import java.util.Map;
 import java.util.List;
-import java.util.HashMap;
 import java.util.ArrayList;
-import java.util.PriorityQueue;
-import java.util.AbstractMap;
 
-import com.airbnb.aerosolve.core.FeatureVector;
-import com.airbnb.aerosolve.core.ModelHeader;
-import com.airbnb.aerosolve.core.ModelRecord;
-import com.airbnb.aerosolve.core.DebugScoreRecord;
+import com.airbnb.aerosolve.core.*;
 import com.airbnb.aerosolve.core.util.Util;
-import com.airbnb.aerosolve.core.util.Spline;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -35,12 +27,39 @@ public class DecisionTreeModel extends AbstractModel {
   @Override
   public float scoreItem(FeatureVector combinedItem) {
     Map<String, Map<String, Double>> floatFeatures = Util.flattenFeature(combinedItem);
+    return scoreFlattenedFeature(floatFeatures);
+  }
 
+  @Override
+  public ArrayList<MulticlassScoringResult> scoreItemMulticlass(FeatureVector combinedItem) {
+    Map<String, Map<String, Double>> floatFeatures = Util.flattenFeature(combinedItem);
+    return scoreFlattenedFeatureMulticlass(floatFeatures);
+  }
+
+  public float scoreFlattenedFeature(Map<String, Map<String, Double>> floatFeatures) {
     int leaf = getLeafIndex(floatFeatures);
     if (leaf < 0) return 0.0f;
 
     ModelRecord stump = stumps.get(leaf);
     return (float) stump.featureWeight;
+  }
+
+  public ArrayList<MulticlassScoringResult> scoreFlattenedFeatureMulticlass(Map<String, Map<String, Double>> floatFeatures) {
+    ArrayList<MulticlassScoringResult> results = new ArrayList<>();
+    int leaf = getLeafIndex(floatFeatures);
+    if (leaf < 0) return results;
+
+    ModelRecord stump = stumps.get(leaf);
+
+    if (stump.labelDistribution == null) return results;
+
+    for (Map.Entry<String, Double> entry : stump.labelDistribution.entrySet()) {
+      MulticlassScoringResult result = new MulticlassScoringResult();
+      result.setLabel(entry.getKey());
+      result.setScore(entry.getValue());
+      results.add(result);
+    }
+    return results;
   }
 
   public int getLeafIndex(Map<String, Map<String, Double>> floatFeatures) {
@@ -117,7 +136,7 @@ public class DecisionTreeModel extends AbstractModel {
         sb.append(String.format("\"node%d\" [\n", i));
         double thresh = stump.threshold;
         sb.append(String.format(
-            "label = \"<f0> %s:%s | <f1> less or equal %f | <f2> greater than %f\";\n",
+            "label = \"<f0> %s:%s | <f1> less than %f | <f2> greater than or equal%f\";\n",
             stump.featureFamily,
             stump.featureName,
             thresh,
@@ -126,7 +145,15 @@ public class DecisionTreeModel extends AbstractModel {
         sb.append("];\n");
       } else {
         sb.append(String.format("\"node%d\" [\n", i));
-        sb.append(String.format("label = \"<f0> Weight %f\";\n", stump.featureWeight));
+        if (stump.labelDistribution != null) {
+          sb.append(String.format("label = \"<f0> "));
+          for (Map.Entry<String, Double> entry : stump.labelDistribution.entrySet()) {
+            sb.append(String.format("%s : %f ", entry.getKey(), entry.getValue()));
+          }
+          sb.append(" \";\n");
+        } else {
+          sb.append(String.format("label = \"<f0> Weight %f\";\n", stump.featureWeight));
+        }
         sb.append("shape = \"record\";\n");
         sb.append("];\n");
       }

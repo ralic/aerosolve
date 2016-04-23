@@ -11,8 +11,13 @@ import java.util.Map.Entry;
 
 /**
  * A custom quantizer that quantizes features based on upper limits and bucket sizes from config
+ * "field1" specifies feature family name.
+ * If "select_features" is specified, we only transform features in the select_features list.
+ * If "exclude_features" is specified, we transform features that are not in the exclude_features list.
+ * If both "select_features" and "exclude_features" are specified, we transform features that are in
+ * "select_features" list and not in "exclude_features" list.
  */
-public class CustomLinearLogQuantizeTransform extends Transform {
+public class CustomLinearLogQuantizeTransform implements Transform {
 
   private String fieldName1;
   private String outputName;
@@ -100,11 +105,7 @@ public class CustomLinearLogQuantizeTransform extends Transform {
 
     Util.optionallyCreateStringFeatures(featureVector);
     Map<String, Set<String>> stringFeatures = featureVector.getStringFeatures();
-    Set<String> output = stringFeatures.get(outputName);
-    if (output == null) {
-      output = new HashSet<>();
-      stringFeatures.put(outputName, output);
-    }
+    Set<String> output = Util.getOrCreateStringFeature(outputName, stringFeatures);
 
     StringBuilder sb = new StringBuilder();
     for (Entry<String, Double> feature : feature1.entrySet()) {

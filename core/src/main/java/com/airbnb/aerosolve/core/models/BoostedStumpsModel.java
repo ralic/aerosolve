@@ -3,20 +3,15 @@ package com.airbnb.aerosolve.core.models;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.Serializable;
 import java.util.Map;
 import java.util.List;
-import java.util.HashMap;
 import java.util.ArrayList;
-import java.util.PriorityQueue;
-import java.util.AbstractMap;
 
 import com.airbnb.aerosolve.core.FeatureVector;
 import com.airbnb.aerosolve.core.ModelHeader;
 import com.airbnb.aerosolve.core.ModelRecord;
 import com.airbnb.aerosolve.core.DebugScoreRecord;
 import com.airbnb.aerosolve.core.util.Util;
-import com.airbnb.aerosolve.core.util.Spline;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -35,6 +30,7 @@ public class BoostedStumpsModel extends AbstractModel {
   public static boolean getStumpResponse(ModelRecord stump,
                                          Map<String, Map<String, Double>> floatFeatures) {
     Map<String, Double> feat = floatFeatures.get(stump.featureFamily);
+    // missing feature corresponding to false (left branch)
     if (feat == null) {
       return false;
     }

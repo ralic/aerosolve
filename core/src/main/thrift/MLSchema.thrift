@@ -5,6 +5,21 @@
  */
 
 namespace java com.airbnb.aerosolve.core
+// Function name correspondent to Function class,
+// so it can be created by java reflection
+// we can save string ModelRecord, but that breaks released model file
+// so to add new function, please add to FunctionForm in order
+enum FunctionForm {
+  Spline,
+  Linear,
+  RADIAL_BASIS_FUNCTION,
+  ARC_COSINE,
+  SIGMOID,
+  RELU,
+  TANH,
+  IDENTITY,
+  MultiDimensionSpline
+}
 
 struct FeatureVector {
   // The first field is the feature family. e.g. "geo"
@@ -36,6 +51,22 @@ struct Example {
   2: optional FeatureVector context;
 }
 
+struct DictionaryEntry {
+  1: optional i32 index;
+  2: optional double mean;
+  3: optional double scale; 
+}
+
+struct DictionaryRecord {
+  1: optional map<string, map<string, DictionaryEntry>> dictionary;
+  2: optional i32 entryCount
+}
+
+struct LabelDictionaryEntry {
+  1: optional string label;
+  2: optional i32 count;
+}
+
 // The model file would contain a header
 // followed by multiple model records.
 // The header contains information for the factory
@@ -50,6 +81,27 @@ struct ModelHeader {
   // calibration parameter
   4: optional double slope;
   5: optional double offset;
+  6: optional DictionaryRecord dictionary;
+  // Multiclass labels.
+  7: optional list<LabelDictionaryEntry> labelDictionary;
+  8: optional map<string, list<double>> labelEmbedding;
+  // The number of hidden layers in neural network
+  9: optional i32 numHiddenLayers;
+  // number of nodes in each hidden layer of a neural network
+  10: optional list<i32> numberHiddenNodes;
+}
+
+struct NDTreeNode {
+// coordinateIndex = -1 is child,
+// coordinateIndex from 0 to min.size()-1 means split in that coordinate
+// similar to KDTreeNode's X_SPLIT, Y_SPLIT
+  1: optional i32 coordinateIndex;
+  2: optional i32 leftChild;
+  3: optional i32 rightChild;
+  4: optional i32 count;
+  5: optional list<double> min;
+  6: optional list<double> max;
+  7: optional double splitValue;
 }
 
 struct ModelRecord {
@@ -69,12 +121,18 @@ struct ModelRecord {
   10: optional double threshold;
   11: optional i32 leftChild;
   12: optional i32 rightChild;
+  // e.g. SPLINE, LINEAR
+  13: optional FunctionForm functionForm;
+  14: optional map<string, double> labelDistribution;
+  16: optional list<NDTreeNode> ndtreeModel;
 }
 
 struct EvaluationRecord {
   1: optional double score;
   2: optional double label;
   3: optional bool is_training;
+  4: optional map<string, double> scores;
+  5: optional map<string, double> labels;
 }
 
 struct DebugScoreRecord {
@@ -82,6 +140,8 @@ struct DebugScoreRecord {
   2: optional string featureName;
   3: optional double featureValue;
   4: optional double featureWeight;
+  // This is only used for multi-class cases
+  5: optional string label;
 }
 
 struct DebugScoreDiffRecord {
@@ -93,3 +153,11 @@ struct DebugScoreDiffRecord {
   6: optional double featureWeight2;
   7: optional double featureWeightDiff;
 }
+
+struct MulticlassScoringResult {
+  1: optional string label;
+  2: optional double score;
+  3: optional double probability;
+}
+
+

@@ -1,19 +1,21 @@
 package com.airbnb.aerosolve.core.models;
 
 import com.airbnb.aerosolve.core.KDTreeNode;
-import com.airbnb.aerosolve.core.KDTreeNodeType;
 import com.airbnb.aerosolve.core.util.Util;
 import com.google.common.base.Optional;
 import lombok.Getter;
+import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.commons.codec.binary.Base64;
-
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Stack;
-import java.util.zip.GZIPInputStream;
+
+import static com.airbnb.aerosolve.core.KDTreeNodeType.LEAF;
 
 // A specialized 2D kd-tree that supports point and box queries.
 public class KDTreeModel implements Serializable {
@@ -24,8 +26,33 @@ public class KDTreeModel implements Serializable {
   @Getter
   private KDTreeNode[] nodes;
 
-  public KDTreeModel(KDTreeNode[] node) {
-    nodes = node;
+  public KDTreeModel(KDTreeNode[] nodes) {
+    this.nodes = nodes;
+  }
+
+  public KDTreeModel(List<KDTreeNode> nodeList) {
+    nodes = new KDTreeNode[nodeList.size()];
+    nodeList.toArray(nodes);
+  }
+
+  // Returns the indice of leaf containing the point.
+  public int leaf(double x, double y) {
+    if (nodes == null) return -1;
+
+    int currIdx = 0;
+
+    while (true) {
+      int nextIdx = next(currIdx, x, y);
+      if (nextIdx == -1) {
+        return currIdx;
+      } else {
+        currIdx = nextIdx;
+      }
+    }
+  }
+
+  public KDTreeNode getNode(int id) {
+    return nodes[id];
   }
 
   // Returns the indices of nodes traversed to get to the leaf containing the point.
@@ -35,35 +62,42 @@ public class KDTreeModel implements Serializable {
     if (nodes == null) return idx;
 
     int currIdx = 0;
-
-    while (currIdx >= 0) {
-      KDTreeNode node = nodes[currIdx];
+    while (true) {
       idx.add(currIdx);
-      switch(node.nodeType) {
-        case X_SPLIT: {
-          if (x < node.splitValue) {
-            currIdx = node.leftChild;
-          } else {
-            currIdx = node.rightChild;
-          }
-        }
-        break;
-        case Y_SPLIT: {
-          if (y < node.splitValue) {
-            currIdx = node.leftChild;
-          } else {
-            currIdx = node.rightChild;
-          }
-        }
-        break;
-        case LEAF: {
-          currIdx = -1;
-        }
-        break;
+      int nextIdx = next(currIdx, x, y);
+      if (nextIdx == -1) {
+        return idx;
+      } else {
+        currIdx = nextIdx;
       }
     }
+  }
 
-    return idx;
+  private int next(int currIdx, double x, double y) {
+    KDTreeNode node = nodes[currIdx];
+    int nextIndex = -1;
+    switch(node.nodeType) {
+      case X_SPLIT: {
+        if (x < node.splitValue) {
+          nextIndex = node.leftChild;
+        } else {
+          nextIndex = node.rightChild;
+        }
+      }
+      break;
+      case Y_SPLIT: {
+        if (y < node.splitValue) {
+          nextIndex = node.leftChild;
+        } else {
+          nextIndex = node.rightChild;
+        }
+      }
+      break;
+      default:
+        assert (node.nodeType == LEAF);
+      break;
+    }
+    return nextIndex;
   }
 
   // Returns the indices of all node overlapping the box
@@ -104,28 +138,12 @@ public class KDTreeModel implements Serializable {
   }
 
   public static Optional<KDTreeModel> readFromGzippedStream(InputStream inputStream) {
-    try {
-      if (inputStream != null) {
-        GZIPInputStream gzipInputStream = new GZIPInputStream(inputStream);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(gzipInputStream));
-        ArrayList<KDTreeNode> nodes = new ArrayList<>();
-        String line = reader.readLine();
-        while(line != null) {
-          KDTreeNode node = Util.decodeKDTreeNode(line);
-          nodes.add(node);
-          line = reader.readLine();
-        }
-        if (!nodes.isEmpty()) {
-          KDTreeNode[] array = new KDTreeNode[nodes.size()];
-          array = nodes.toArray(array);
-          KDTreeModel model  = new KDTreeModel(array);
-          return Optional.of(model);
-        }
-      }
-    } catch (IOException e) {
-      log.error(e.getMessage());
+    List<KDTreeNode> nodes = Util.readFromGzippedStream(KDTreeNode.class, inputStream);
+    if (!nodes.isEmpty()) {
+      return Optional.of(new KDTreeModel(nodes));
+    } else {
+      return Optional.absent();
     }
-    return Optional.absent();
   }
 
   public static Optional<KDTreeModel> readFromGzippedResource(String name) {
